@@ -14,14 +14,7 @@ class MainApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Wikipedia Flutter'),
-        ),
-        body: const Center(
-          child: Text('Loading...'),
-        ),
-      ),
+      home: ArticleView(),
     );
   }
 }
@@ -46,7 +39,123 @@ class ArticleModel {
 }
 
 // View: Displays the UI.
-class ArticleViewModel {}
+class ArticleViewModel extends ChangeNotifier {
+  final ArticleModel model;
+  Summary? summary;
+  String? errorMessage;
+  bool loading = false;
+
+  ArticleViewModel(this.model) {
+    getRandomArticleSummary();
+  }
+
+  Future<void> getRandomArticleSummary() async {
+    loading = true;
+    notifyListeners();
+    try {
+      summary = await model.getRandomArticleSummary();
+      print('Article loaded: ${summary!.titles.normalized}'); // Temporary
+      errorMessage = null; // Clear any previous errors.
+    } on HttpException catch (error) {
+      print('Error loading article: ${error.message}'); // Temporary
+      errorMessage = error.message;
+      summary = null;
+    }
+    loading = false;
+    notifyListeners();
+  }
+}
 
 // ViewModel: Manages state and connects the two.
-class ArticleView {}
+class ArticleView extends StatelessWidget {
+  ArticleView({super.key});
+
+  final viewModel = ArticleViewModel(ArticleModel());
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Wikipedia Flutter'),
+      ),
+      body: ListenableBuilder(
+        listenable: viewModel,
+        builder: (context, child) {
+          return switch ((
+            viewModel.loading,
+            viewModel.summary,
+            viewModel.errorMessage,
+          )) {
+            (true, _, _) => CircularProgressIndicator(),
+            (false, _, String message) => Center(child: Text(message)),
+            (false, null, null) => Center(
+              child: Text('An unknown error has occured'),
+            ),
+            (false, Summary summary, null) => ArticlePage(
+              summary: summary,
+              nextArticleCallback: viewModel.getRandomArticleSummary,
+            ),
+          };
+        },
+      ),
+    );
+  }
+}
+
+class ArticlePage extends StatelessWidget {
+  const ArticlePage({
+    super.key,
+    required this.summary,
+    required this.nextArticleCallback,
+  });
+
+  final Summary summary;
+  final VoidCallback nextArticleCallback;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          ArticleWidget(
+            summary: summary,
+          ),
+          ElevatedButton(
+            onPressed: nextArticleCallback,
+            child: Text('Next Random Article'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ArticleWidget extends StatelessWidget {
+  const ArticleWidget({super.key, required this.summary});
+
+  final Summary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Column(
+        spacing: 10.0,
+        children: [
+          if (summary.hasImage)
+            Image.network(
+              summary.originalImage!.source,
+            ),
+          Text(
+            summary.titles.normalized,
+            overflow: TextOverflow.ellipsis,
+            style: TextTheme.of(context).bodySmall,
+          ),
+          Text(
+            summary.extract,
+          ),
+        ],
+      ),
+    );
+  }
+}
